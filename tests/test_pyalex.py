@@ -105,6 +105,17 @@ def test_request_timeout(monkeypatch):
     assert captured["timeout"] == 60.0
 
 
+def test_invert_abstract():
+    """Positions are ordered and HTML entities are decoded."""
+    inverted = {"Fish": [0], "&amp;": [1], "chips": [2]}
+
+    assert pyalex.invert_abstract(inverted) == "Fish & chips"
+
+
+def test_invert_abstract_none():
+    assert pyalex.invert_abstract(None) is None
+
+
 def test_retry_on_status_code(monkeypatch):
     """Configured status codes are retried until the last attempt."""
     calls = []

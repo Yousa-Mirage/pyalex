@@ -1,3 +1,4 @@
+import html
 import logging
 import time
 from collections.abc import Callable
@@ -346,8 +347,11 @@ def invert_abstract(inv_index: dict[str, list[int]] | None) -> str | None:
         Inverted abstract.
     """
     if inv_index is not None:
-        l_inv = [(w, p) for w, pos in inv_index.items() for p in pos]
-        return " ".join(x[0] for x in sorted(l_inv, key=lambda x: x[1]))
+        positions = sorted(
+            (position, word) for word, pos in inv_index.items() for position in pos
+        )
+        # OpenAlex keeps HTML entities such as ``&amp;`` in the index keys.
+        return html.unescape(" ".join(word for _, word in positions))
 
 
 def _wrap_values_nested_dict(
