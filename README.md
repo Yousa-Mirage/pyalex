@@ -51,7 +51,7 @@ We aim to cover the entire API, and we are looking for help. We are welcoming Pu
 
 ## Installation
 
-PyAlex requires Python 3.8 or later.
+PyAlex requires Python 3.10 or later.
 
 ```sh
 pip install pyalex
