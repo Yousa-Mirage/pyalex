@@ -324,6 +324,8 @@ def _send(client: httpx2.Client, url: str, *, auth: httpx2.Auth) -> httpx2.Respo
             time.sleep(config.retry_backoff_factor * (2**attempt))
             continue
 
+        _check_credits(response)
+
         if response.status_code in config.retry_http_codes and not is_last_attempt:
             time.sleep(config.retry_backoff_factor * (2**attempt))
             continue
@@ -386,15 +388,47 @@ class QueryError(ValueError):
     """Exception raised for errors in the query."""
 
 
+class CreditsExhaustedError(QueryError):
+    """Raised when the API key has no credits left for the request.
+
+    OpenAlex reports this as HTTP 429 with ``X-RateLimit-Remaining`` lower than
+    ``X-RateLimit-Credits-Required``. Retrying cannot help; the budget resets at
+    midnight UTC.
+    """
+
+
 class OpenAlexEntity(dict[str, Any]):
     """Base class for OpenAlex entities."""
+
+
+class RateLimit(TypedDict, total=False):
+    """Rate limit and credit information returned in the ``X-RateLimit-*`` headers.
+
+    Keys mirror the header names with the ``x-ratelimit-`` prefix removed and
+    dashes replaced by underscores, so ``X-RateLimit-Credits-Used`` becomes
+    ``credits_used``.
+    """
+
+    limit: int
+    remaining: int
+    reset: int
+    credits_used: int
+    credits_remaining: int
+    credits_limit: int
+    credits_required: int
+    credits_reset: int
+    cost_usd: float
+    limit_usd: float
+    remaining_usd: float
+    prepaid_remaining_usd: float
+    onetime_remaining: int
 
 
 class Meta(TypedDict):
     """Metadata returned alongside a list of OpenAlex entities.
 
-    All keys are optional because the exact set depends on the endpoint and
-    on the query parameters (e.g. ``page`` is absent when cursor paging is used).
+    Keys whose presence depends on the endpoint or the query parameters are
+    marked ``NotRequired`` (e.g. ``page`` is absent when cursor paging is used).
     """
 
     count: int
@@ -403,6 +437,73 @@ class Meta(TypedDict):
     per_page: NotRequired[int]
     next_cursor: NotRequired[str | None]
     groups_count: NotRequired[int]
+    ratelimit: NotRequired[RateLimit]
+
+
+_RATELIMIT_PREFIX = "x-ratelimit-"
+
+
+def _extract_ratelimit(response: httpx2.Response) -> RateLimit:
+    """Parse the ``X-RateLimit-*`` headers of a response.
+
+    Parameters
+    ----------
+    response : httpx2.Response
+        Response to read the headers from.
+
+    Returns
+    -------
+    RateLimit
+        Parsed values with native types. Headers that are absent or cannot be
+        parsed are omitted.
+    """
+    values: dict[str, int | float] = {}
+
+    for header, raw in response.headers.items():
+        name = header.lower()
+        if not name.startswith(_RATELIMIT_PREFIX):
+            continue
+
+        key = name.removeprefix(_RATELIMIT_PREFIX).replace("-", "_")
+        try:
+            values[key] = float(raw) if key.endswith("_usd") else int(raw)
+        except ValueError:
+            logger.debug("Ignoring unparsable rate limit header %s=%r", header, raw)
+
+    return cast(RateLimit, values)
+
+
+def _check_credits(response: httpx2.Response) -> None:
+    """Raise :class:`CreditsExhaustedError` when a 429 means the budget is spent.
+
+    Parameters
+    ----------
+    response : httpx2.Response
+        Response to inspect.
+
+    Raises
+    ------
+    CreditsExhaustedError
+        If the response is a 429 and fewer credits remain than the request
+        requires. Retrying cannot help, so it is raised before the retry loop.
+    """
+    if response.status_code != 429:
+        return
+
+    try:
+        remaining = int(response.headers.get("x-ratelimit-remaining", "1"))
+        required = int(response.headers.get("x-ratelimit-credits-required", "1"))
+    except ValueError:
+        return
+
+    if remaining >= required:
+        return
+
+    reset = response.headers.get("x-ratelimit-reset")
+    reset_hint = f" The budget resets in {reset} seconds." if reset else ""
+    raise CreditsExhaustedError(
+        f"Insufficient credits: {remaining} remaining, {required} required.{reset_hint}"
+    )
 
 
 class OpenAlexResponseList[T: OpenAlexEntity](list[T]):
@@ -626,16 +727,20 @@ def _fetch_entities[ResponseT: OpenAlexEntity](
     res.raise_for_status()
     res_json = res.json()
 
+    meta: Any = res_json.get("meta")
+    ratelimit = _extract_ratelimit(res)
+    if meta is not None and ratelimit:
+        meta = {**meta, "ratelimit": ratelimit}
+    response_meta = cast(Meta | None, meta)
+
     if params and "group-by" in params:
         # ``group_by`` rows are buckets, not entities of type ResponseT.
         return cast(
             OpenAlexResponseList[ResponseT],
-            OpenAlexResponseList(res_json["group_by"], res_json["meta"], GroupByBucket),
+            OpenAlexResponseList(res_json["group_by"], response_meta, GroupByBucket),
         )
     elif "results" in res_json:
-        return OpenAlexResponseList(
-            res_json["results"], res_json["meta"], resource_class
-        )
+        return OpenAlexResponseList(res_json["results"], response_meta, resource_class)
     elif "id" in res_json:
         return resource_class(res_json)
     else:

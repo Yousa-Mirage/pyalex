@@ -12,6 +12,7 @@ from httpx2 import HTTPError
 import pyalex
 from pyalex import Authors
 from pyalex import Awards
+from pyalex import CreditsExhaustedError
 from pyalex import Domains
 from pyalex import Fields
 from pyalex import Funders
@@ -25,6 +26,7 @@ from pyalex import Work
 from pyalex import Works
 from pyalex import autocomplete
 from pyalex.api import QueryError
+from pyalex.api import _extract_ratelimit
 
 # Load environment variables from .env file
 load_dotenv()
@@ -140,6 +142,71 @@ def test_retry_on_status_code(monkeypatch):
 
     assert len(calls) == 3
     assert len(result) == 0
+
+
+def test_extract_ratelimit():
+    """Rate limit headers are parsed into native types."""
+    response = httpx2.Response(
+        200,
+        headers={
+            "x-ratelimit-remaining": "936",
+            "x-ratelimit-limit": "1000",
+            "x-ratelimit-cost-usd": "0.01",
+            "x-ratelimit-future-header": "42",
+        },
+        request=httpx2.Request("GET", "https://api.openalex.org/works"),
+    )
+
+    ratelimit = _extract_ratelimit(response)
+
+    assert ratelimit["remaining"] == 936
+    assert ratelimit["limit"] == 1000
+    assert ratelimit["cost_usd"] == 0.01
+    assert "future_header" in ratelimit
+
+
+def test_ratelimit_in_meta(monkeypatch):
+    """Rate limit info is merged into ``meta`` for list responses."""
+
+    def fake_get(self, url, **kwargs):
+        return httpx2.Response(
+            200,
+            headers={"x-ratelimit-remaining": "936"},
+            json={"results": [], "meta": {"count": 0, "db_response_time_ms": 1}},
+            request=httpx2.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx2.Client, "get", fake_get)
+
+    result = Works().get()
+
+    assert result.meta is not None
+    assert result.meta["ratelimit"]["remaining"] == 936
+
+
+def test_credits_exhausted(monkeypatch):
+    """An exhausted budget raises immediately instead of retrying."""
+    calls = []
+
+    def fake_get(self, url, **kwargs):
+        calls.append(url)
+        return httpx2.Response(
+            429,
+            headers={
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-credits-required": "1",
+                "x-ratelimit-reset": "3600",
+            },
+            request=httpx2.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx2.Client, "get", fake_get)
+    monkeypatch.setitem(pyalex.config, "max_retries", 3)
+
+    with pytest.raises(CreditsExhaustedError, match="Insufficient credits"):
+        Works().get()
+
+    assert len(calls) == 1
 
 
 @requires_api_key(reason="OpenAlex requires authentication for unfiltered queries")
