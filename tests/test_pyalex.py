@@ -631,6 +631,28 @@ def test_premium_api():
     pyalex.config.api_key = None
 
 
+def test_content_get_uses_subclass_url(monkeypatch):
+    """PDF/TEI must fetch their own format, not the generic work content."""
+    requested = []
+
+    def fake_get(self, url, **kwargs):
+        requested.append(url)
+        return httpx2.Response(
+            200, content=b"content", request=httpx2.Request("GET", url)
+        )
+
+    monkeypatch.setattr(httpx2.Client, "get", fake_get)
+
+    work = Work({"id": "https://openalex.org/W1"})
+    assert work.pdf.get() == b"content"
+    assert work.tei.get() == b"content"
+
+    assert requested == [
+        "https://content.openalex.org/works/W1.pdf",
+        "https://content.openalex.org/works/W1.grobid-xml",
+    ]
+
+
 def test_work_pdf_and_tei_download(tmpdir):
     """Test downloading PDF and TEI content for a Work.
 

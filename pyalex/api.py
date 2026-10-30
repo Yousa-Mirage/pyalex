@@ -1115,16 +1115,17 @@ class BaseContent:
         return f"https://content.openalex.org/works/{self.key}"
 
     def get(self) -> bytes:
-        """Get the content
+        """Get the content.
+
+        Requests ``self.url`` so that subclasses fetch the format they
+        advertise (``.pdf`` for :class:`PDF`, ``.grobid-xml`` for :class:`TEI`).
 
         Returns
         -------
         bytes
             Content of the request.
         """
-        content_url = f"https://content.openalex.org/works/{self.key}"
-
-        res = _send(_get_client(), content_url, auth=OpenAlexAuth(config))
+        res = _send(_get_client(), self.url, auth=OpenAlexAuth(config))
         res.raise_for_status()
         return res.content
 
