@@ -85,6 +85,24 @@ def test_config():
     assert pyalex.config.api_key == "my_api_key"
     pyalex.config.api_key = None
 
+    assert pyalex.config.timeout == 60.0
+
+
+def test_request_timeout(monkeypatch):
+    """Every request must carry a timeout so a stalled connection cannot hang."""
+    captured = {}
+
+    def fake_get(self, url, **kwargs):
+        captured.update(kwargs)
+        raise requests.exceptions.Timeout
+
+    monkeypatch.setattr(requests.Session, "get", fake_get)
+
+    with pytest.raises(requests.exceptions.Timeout):
+        Works().get()
+
+    assert captured["timeout"] == 60.0
+
 
 @requires_api_key(reason="OpenAlex requires authentication for unfiltered queries")
 @pytest.mark.parametrize("entity", OPEN_ALEX_ENTITIES)

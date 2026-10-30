@@ -42,6 +42,8 @@ class AlexConfig(dict[str, Any]):
         User agent string for API requests.
     openalex_url : str
         Base URL for OpenAlex API.
+    timeout : float
+        Timeout in seconds for a single HTTP request.
     max_retries : int
         Maximum number of retries for API requests.
     retry_backoff_factor : float
@@ -55,6 +57,7 @@ class AlexConfig(dict[str, Any]):
     api_key: str | None
     user_agent: str
     openalex_url: str
+    timeout: float
     max_retries: int
     retry_backoff_factor: float
     retry_http_codes: list[int]
@@ -70,6 +73,7 @@ class AlexConfig(dict[str, Any]):
         api_key: str | None = None,
         user_agent: str | None = None,
         openalex_url: str = "https://api.openalex.org",
+        timeout: float = 60.0,
         max_retries: int = 0,
         retry_backoff_factor: float = 0.1,
         retry_http_codes: list[int] | None = None,
@@ -84,6 +88,7 @@ class AlexConfig(dict[str, Any]):
             api_key=api_key,
             user_agent=user_agent,
             openalex_url=openalex_url,
+            timeout=timeout,
             max_retries=max_retries,
             retry_backoff_factor=retry_backoff_factor,
             retry_http_codes=retry_http_codes,
@@ -539,7 +544,7 @@ def _fetch_entities(
 
     logger.debug(f"GET request to URL: {url}")
 
-    res = session.get(url, auth=OpenAlexAuth(config))
+    res = session.get(url, auth=OpenAlexAuth(config), timeout=config.timeout)
 
     if res.status_code == 400:
         payload = res.json()
@@ -1107,7 +1112,10 @@ class BaseContent:
         content_url = f"https://content.openalex.org/works/{self.key}"
 
         res = _get_requests_session().get(
-            content_url, auth=OpenAlexAuth(config), allow_redirects=True
+            content_url,
+            auth=OpenAlexAuth(config),
+            timeout=config.timeout,
+            allow_redirects=True,
         )
         res.raise_for_status()
         return res.content
@@ -1199,7 +1207,9 @@ class Work(OpenAlexEntity):
         openalex_id = self["id"].split("/")[-1]
         n_gram_url = f"{config.openalex_url}/works/{openalex_id}/ngrams"
 
-        res = _get_requests_session().get(n_gram_url, auth=OpenAlexAuth(config))
+        res = _get_requests_session().get(
+            n_gram_url, auth=OpenAlexAuth(config), timeout=config.timeout
+        )
         res.raise_for_status()
         results = res.json()
 
