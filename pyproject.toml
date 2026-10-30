@@ -8,7 +8,6 @@ readme = "README.md"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13"
 ]
@@ -17,7 +16,7 @@ dependencies = [
     "httpx2>=2.16"
 ]
 dynamic = ["version"]
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-xdist", "python-dotenv"]
@@ -58,7 +57,7 @@ force-single-line = true
 "tests/*" = ["PT011"]
 
 [tool.ty.environment]
-python-version = "3.11"
+python-version = "3.12"
 
 [tool.ty.rules]
 unused-ignore-comment = "error"

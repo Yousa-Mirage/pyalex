@@ -1,10 +1,6 @@
 version = 1
 revision = 5
-requires-python = ">=3.11"
-resolution-markers = [
-    "python_full_version >= '3.12' and sys_platform == 'emscripten'",
-    "python_full_version < '3.12' or sys_platform != 'emscripten'",
-]
+requires-python = ">=3.12"
 
 [[package]]
 name = "anyio"
@@ -66,7 +62,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", marker = "sys_platform != 'emscripten'" },
     { name = "httpcore2", marker = "sys_platform != 'emscripten'" },
-    { name = "httpx2-jsfetch", marker = "python_full_version >= '3.12' and sys_platform == 'emscripten'" },
+    { name = "httpx2-jsfetch", marker = "sys_platform == 'emscripten'" },
     { name = "idna" },
     { name = "truststore", marker = "sys_platform != 'emscripten'" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
