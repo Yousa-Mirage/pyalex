@@ -138,7 +138,8 @@ def test_paginate_per_page_1000():
 @requires_api_key(reason="OpenAlex requires authentication for unfiltered queries")
 def test_paginate_per_page_str():
     with pytest.raises(ValueError):
-        assert next(Authors().paginate(per_page="100"))
+        # Passing a string is invalid on purpose: this guards the runtime check.
+        assert next(Authors().paginate(per_page="100"))  # ty: ignore[invalid-argument-type]
 
 
 @requires_api_key(reason="OpenAlex requires authentication for search_filter queries")

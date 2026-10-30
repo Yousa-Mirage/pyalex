@@ -135,7 +135,8 @@ def test_per_page_1000():
 @requires_api_key(reason="OpenAlex requires authentication for filter queries")
 def test_per_page_str():
     with pytest.raises(ValueError):
-        Works().filter(publication_year=2020).get(per_page="100")
+        # Passing a string is invalid on purpose: this guards the runtime check.
+        Works().filter(publication_year=2020).get(per_page="100")  # ty: ignore[invalid-argument-type]
 
 
 def test_W4238809453_works():
@@ -338,7 +339,7 @@ def test_ngrams_without_metadata():
 
 @pytest.mark.skip("This test is not working due to unavailable API.")
 def test_ngrams_with_metadata():
-    r, meta = Works()["W2023271753"].ngrams()
+    _r, meta = Works()["W2023271753"].ngrams()
 
     assert meta["count"] == 1068
 
@@ -412,6 +413,21 @@ def test_not_operator_list():
     )
 
 
+def test_url_is_idempotent():
+    """Reading ``.url`` twice must not re-encode logical expressions."""
+    query = Works().filter_not(institutions={"country_code": "new zealand"})
+
+    assert query.url == query.url
+    assert "!new+zealand" in query.url
+
+
+def test_params_list_url():
+    assert (
+        Works(params=["W1", "W2"]).url
+        == "https://api.openalex.org/works?filter=openalex_id:W1|W2"
+    )
+
+
 @pytest.mark.skip("Wait for feedback on issue by OpenAlex")
 def test_combined_operators():
     # works:
@@ -432,7 +448,7 @@ def test_sample():
 
 
 def test_sample_seed():
-    url = "https://api.openalex.org/works?filter=publication_year:2020,is_oa:true&sample=50&seed=535"  # noqa
+    url = "https://api.openalex.org/works?filter=publication_year:2020,is_oa:true&sample=50&seed=535"
     assert (
         url
         == Works().filter(publication_year=2020, is_oa=True).sample(50, seed=535).url
@@ -450,14 +466,14 @@ def test_subset():
 def test_autocomplete_works():
     w = Works().filter(publication_year=2023).autocomplete("planetary boundaries")
 
-    assert all(["external_id" in x for x in w])
+    assert all("external_id" in x for x in w)
 
 
 @requires_api_key(reason="OpenAlex requires authentication for autocomplete endpoint")
 def test_autocomplete():
     a = autocomplete("stockholm resilience")
 
-    assert all(["external_id" in x for x in a])
+    assert all("external_id" in x for x in a)
 
 
 @requires_api_key(reason="OpenAlex requires authentication for filter queries")
@@ -598,6 +614,7 @@ def test_similar_short():
     """Test basic similar() with short text."""
     w = Works().similar("machine learning").get()
     assert len(w) >= 0
+    assert w.meta is not None
     assert w.meta.get("count") is not None
 
 
