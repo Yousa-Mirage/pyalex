@@ -44,7 +44,7 @@ pyalex = ["py.typed"]
 fallback_version = "0.0.0"
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 88
 
 [tool.ruff.lint]
@@ -61,6 +61,10 @@ python-version = "3.12"
 
 [tool.ty.rules]
 unused-ignore-comment = "error"
+invalid-ignore-comment = "error"
+missing-override-decorator = "error"
+redundant-cast = "warn"
+possibly-missing-attribute = "warn"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

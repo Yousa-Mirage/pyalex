@@ -7,13 +7,13 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Generic
+from typing import Final
 from typing import Literal
 from typing import Self
 from typing import TypedDict
-from typing import TypeVar
 from typing import cast
 from typing import overload
+from typing import override
 from urllib.parse import quote_plus
 from urllib.parse import urlunparse
 
@@ -133,6 +133,7 @@ class _LogicalExpression:
     def __init__(self, value: Any) -> None:
         self.value = value
 
+    @override
     def __str__(self) -> str:
         return f"{self.token}{self.value}"
 
@@ -384,9 +385,6 @@ class OpenAlexEntity(dict[str, Any]):
     """Base class for OpenAlex entities."""
 
 
-T = TypeVar("T", bound=OpenAlexEntity)
-
-
 class Meta(TypedDict, total=False):
     """Metadata returned alongside a list of OpenAlex entities.
 
@@ -402,7 +400,7 @@ class Meta(TypedDict, total=False):
     groups_count: int
 
 
-class OpenAlexResponseList(list[T]):
+class OpenAlexResponseList[T: OpenAlexEntity](list[T]):
     """A list of OpenAlexEntity objects with metadata.
 
     Attributes:
@@ -430,7 +428,7 @@ class OpenAlexResponseList(list[T]):
         super().__init__([self.resource_class(ent) for ent in results])
 
 
-class Paginator(Generic[T]):
+class Paginator[T: OpenAlexEntity]:
     """Paginator for OpenAlex API results.
 
     Attributes
@@ -454,8 +452,8 @@ class Paginator(Generic[T]):
         Maximum number of results.
     """
 
-    VALUE_CURSOR_START = "*"
-    VALUE_NUMBER_START = 1
+    VALUE_CURSOR_START: Final[str] = "*"
+    VALUE_NUMBER_START: Final[int] = 1
 
     def __init__(
         self,
@@ -534,6 +532,7 @@ class OpenAlexAuth(httpx2.Auth):
     def __init__(self, config: AlexConfig) -> None:
         self.config = config
 
+    @override
     def auth_flow(
         self, request: httpx2.Request
     ) -> Generator[httpx2.Request, httpx2.Response, None]:
@@ -549,10 +548,7 @@ class OpenAlexAuth(httpx2.Auth):
         yield request
 
 
-ResponseT = TypeVar("ResponseT", bound=OpenAlexEntity)
-
-
-def _fetch_entities(
+def _fetch_entities[ResponseT: OpenAlexEntity](
     url: str,
     *,
     params: str | list[str] | dict[str, Any] | None,
@@ -611,7 +607,7 @@ def _fetch_entities(
         raise ValueError("Unknown response format")
 
 
-class BaseOpenAlex(Generic[T]):
+class BaseOpenAlex[T: OpenAlexEntity]:
     """Base class for OpenAlex objects.
 
     Parameters
@@ -1077,6 +1073,7 @@ class BaseContent:
     def __init__(self, key: str) -> None:
         self.key = key
 
+    @override
     def __repr__(self) -> str:
         return f"Content(key='{self.key}')"
 
@@ -1125,6 +1122,7 @@ class PDF(BaseContent):
     """Class representing a PDF content in OpenAlex."""
 
     @property
+    @override
     def url(self) -> str:
         """Get the URL for the content.
 
@@ -1140,6 +1138,7 @@ class TEI(BaseContent):
     """Class representing a TEI content in OpenAlex."""
 
     @property
+    @override
     def url(self) -> str:
         """Get the URL for the content.
 
@@ -1154,6 +1153,7 @@ class TEI(BaseContent):
 class Work(OpenAlexEntity):
     """Class representing a work entity in OpenAlex."""
 
+    @override
     def __getitem__(self, key: str) -> Any:
         if key == "abstract":
             return invert_abstract(self["abstract_inverted_index"])
