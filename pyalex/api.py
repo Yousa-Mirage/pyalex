@@ -429,6 +429,26 @@ class OpenAlexResponseList[T: OpenAlexEntity](list[T]):
         super().__init__([self.resource_class(ent) for ent in results])
 
 
+class GroupByBucket(OpenAlexEntity):
+    """One bucket of a ``group_by`` response.
+
+    OpenAlex returns ``{"key": ..., "key_display_name": ..., "count": ...}``
+    for every group. These rows are not entities, so they get their own type.
+    """
+
+    @overload
+    def __getitem__(self, key: Literal["key"]) -> str: ...
+    @overload
+    def __getitem__(self, key: Literal["key_display_name"]) -> str: ...
+    @overload
+    def __getitem__(self, key: Literal["count"]) -> int: ...
+    @overload
+    def __getitem__(self, key: str) -> Any: ...
+    @override
+    def __getitem__(self, key: str) -> Any:
+        return super().__getitem__(key)
+
+
 class Paginator[T: OpenAlexEntity]:
     """Paginator for OpenAlex API results.
 
@@ -595,8 +615,10 @@ def _fetch_entities[ResponseT: OpenAlexEntity](
     res_json = res.json()
 
     if params and "group-by" in params:
-        return OpenAlexResponseList(
-            res_json["group_by"], res_json["meta"], resource_class
+        # ``group_by`` rows are buckets, not entities of type ResponseT.
+        return cast(
+            OpenAlexResponseList[ResponseT],
+            OpenAlexResponseList(res_json["group_by"], res_json["meta"], GroupByBucket),
         )
     elif "results" in res_json:
         return OpenAlexResponseList(
@@ -969,8 +991,11 @@ class BaseOpenAlex[T: OpenAlexEntity]:
         self._add_params("sort", kwargs)
         return self
 
-    def group_by(self, group_key: str) -> Self:
+    def group_by(self, group_key: str) -> "GroupByQuery[T]":
         """Add group-by parameters to the API request.
+
+        The returned object is not a :class:`BaseOpenAlex` because ``get()``
+        returns buckets instead of entities.
 
         Parameters
         ----------
@@ -979,11 +1004,11 @@ class BaseOpenAlex[T: OpenAlexEntity]:
 
         Returns
         -------
-        BaseOpenAlex
-            Updated object.
+        GroupByQuery
+            Typed view returning ``GroupByBucket`` objects.
         """
         self._add_params("group-by", group_key)
-        return self
+        return GroupByQuery(self)
 
     def search(self, s: str) -> Self:
         """Add search parameters to the API request.
@@ -1394,3 +1419,71 @@ def autocomplete(s: str) -> OpenAlexResponseList[Autocomplete]:
 # aliases
 People = Authors
 Journals = Sources
+
+
+class GroupByQuery[T: OpenAlexEntity]:
+    """A ``group_by`` query whose results are buckets instead of entities.
+
+    Returned by :meth:`BaseOpenAlex.group_by`. It deliberately does not inherit
+    from ``BaseOpenAlex``: the rows are not entities of type ``T``, and
+    pretending otherwise would make ``get()`` return the wrong element type.
+    """
+
+    def __init__(self, query: BaseOpenAlex[T]) -> None:
+        self._query = query
+
+    @property
+    def url(self) -> str:
+        """URL of the underlying request."""
+        return self._query.url
+
+    def filter(self, **kwargs: Any) -> Self:
+        self._query.filter(**kwargs)
+        return self
+
+    def filter_and(self, **kwargs: Any) -> Self:
+        self._query.filter_and(**kwargs)
+        return self
+
+    def filter_or(self, **kwargs: Any) -> Self:
+        self._query.filter_or(**kwargs)
+        return self
+
+    def filter_not(self, **kwargs: Any) -> Self:
+        self._query.filter_not(**kwargs)
+        return self
+
+    def filter_gt(self, **kwargs: Any) -> Self:
+        self._query.filter_gt(**kwargs)
+        return self
+
+    def filter_lt(self, **kwargs: Any) -> Self:
+        self._query.filter_lt(**kwargs)
+        return self
+
+    def search_filter(self, **kwargs: Any) -> Self:
+        self._query.search_filter(**kwargs)
+        return self
+
+    def sort(self, **kwargs: Any) -> Self:
+        self._query.sort(**kwargs)
+        return self
+
+    def select(self, s: str | list[str]) -> Self:
+        self._query.select(s)
+        return self
+
+    def get(self) -> OpenAlexResponseList[GroupByBucket]:
+        """Return the groups.
+
+        Returns
+        -------
+        OpenAlexResponseList[GroupByBucket]
+            One bucket per group, each with ``key``, ``key_display_name`` and
+            ``count``.
+        """
+        return cast(OpenAlexResponseList[GroupByBucket], self._query.get())
+
+    def count(self) -> int:
+        """Return the number of groups."""
+        return self._query.count()

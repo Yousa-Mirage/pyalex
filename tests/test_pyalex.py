@@ -303,6 +303,43 @@ def test_data_publications():
     assert len(w) > 20
 
 
+def test_group_by_url():
+    query = (
+        Works()
+        .filter(type="dataset")
+        .group_by("institutions.country_code")
+        .sort(count="desc")
+    )
+
+    assert query.url == (
+        "https://api.openalex.org/works?filter=type:dataset"
+        "&group-by=institutions.country_code&sort=count:desc"
+    )
+
+
+def test_group_by_returns_buckets(monkeypatch):
+    """A group_by result holds buckets, not works."""
+
+    def fake_get(self, url, **kwargs):
+        return httpx2.Response(
+            200,
+            json={
+                "group_by": [{"key": "2020", "key_display_name": "2020", "count": 42}],
+                "meta": {"count": 1, "db_response_time_ms": 5},
+            },
+            request=httpx2.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx2.Client, "get", fake_get)
+
+    result = Works().filter(type="dataset").group_by("publication_year").get()
+
+    assert len(result) == 1
+    assert result[0]["count"] == 42
+    assert result[0]["key"] == "2020"
+    assert not isinstance(result[0], Work)
+
+
 @requires_api_key(reason="OpenAlex requires authentication for search queries")
 def test_search():
     w = (

@@ -20,6 +20,8 @@ from pyalex.api import Field
 from pyalex.api import Fields
 from pyalex.api import Funder
 from pyalex.api import Funders
+from pyalex.api import GroupByBucket
+from pyalex.api import GroupByQuery
 from pyalex.api import Institution
 from pyalex.api import Institutions
 from pyalex.api import Journals
@@ -52,6 +54,8 @@ __all__ = [
     "Fields",
     "Funder",
     "Funders",
+    "GroupByBucket",
+    "GroupByQuery",
     "Institution",
     "Institutions",
     "Journals",
