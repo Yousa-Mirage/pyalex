@@ -51,10 +51,10 @@ We aim to cover the entire API, and we are looking for help. We are welcoming Pu
 
 ## Installation
 
-PyAlex requires Python 3.10 or later.
+PyAlex requires Python 3.10 or later. Install it with [uv](https://docs.astral.sh/uv/):
 
 ```sh
-pip install pyalex
+uv add git+https://github.com/Yousa-Mirage/pyalex
 ```
 
 ## Getting started
