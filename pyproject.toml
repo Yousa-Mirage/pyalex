@@ -8,19 +8,16 @@ readme = "README.md"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13"
 ]
 license = {text = "MIT"}
 dependencies = [
-    "requests",
-    "urllib3",
-    "typing_extensions>=4.12"
+    "httpx2>=2.16"
 ]
 dynamic = ["version"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-xdist", "python-dotenv"]
@@ -48,7 +45,7 @@ pyalex = ["py.typed"]
 fallback_version = "0.0.0"
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 88
 
 [tool.ruff.lint]
@@ -61,7 +58,7 @@ force-single-line = true
 "tests/*" = ["PT011"]
 
 [tool.ty.environment]
-python-version = "3.10"
+python-version = "3.11"
 
 [tool.ty.rules]
 unused-ignore-comment = "error"

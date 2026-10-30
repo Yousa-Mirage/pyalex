@@ -4,10 +4,10 @@ import os
 from functools import wraps
 from pathlib import Path
 
+import httpx2
 import pytest
-import requests
 from dotenv import load_dotenv
-from requests import HTTPError
+from httpx2 import HTTPError
 
 import pyalex
 from pyalex import Authors
@@ -93,14 +93,42 @@ def test_request_timeout(monkeypatch):
 
     def fake_get(self, url, **kwargs):
         captured.update(kwargs)
-        raise requests.exceptions.Timeout
+        raise httpx2.TimeoutException("timed out")
 
-    monkeypatch.setattr(requests.Session, "get", fake_get)
+    monkeypatch.setattr(httpx2.Client, "get", fake_get)
+    # Timeouts are transport errors and would be retried; keep the test fast.
+    monkeypatch.setitem(pyalex.config, "max_retries", 0)
 
-    with pytest.raises(requests.exceptions.Timeout):
+    with pytest.raises(httpx2.TimeoutException):
         Works().get()
 
     assert captured["timeout"] == 60.0
+
+
+def test_retry_on_status_code(monkeypatch):
+    """Configured status codes are retried until the last attempt."""
+    calls = []
+
+    def fake_get(self, url, **kwargs):
+        calls.append(url)
+        if len(calls) < 3:
+            return httpx2.Response(503, request=httpx2.Request("GET", url))
+        return httpx2.Response(
+            200,
+            json={"results": [], "meta": {"count": 0}},
+            request=httpx2.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx2.Client, "get", fake_get)
+    # ``config`` is a dict subclass, so its values must be patched with
+    # ``setitem``; ``setattr`` would look in ``__dict__`` and restore wrongly.
+    monkeypatch.setitem(pyalex.config, "max_retries", 2)
+    monkeypatch.setitem(pyalex.config, "retry_backoff_factor", 0.0)
+
+    result = Works().get()
+
+    assert len(calls) == 3
+    assert len(result) == 0
 
 
 @requires_api_key(reason="OpenAlex requires authentication for unfiltered queries")
@@ -200,7 +228,7 @@ def test_multi_works():
 
 @requires_api_key(reason="OpenAlex requires authentication for filter queries")
 def test_works_multifilter():
-    r = requests.get(
+    r = httpx2.get(
         "https://api.openalex.org/works?filter=publication_year:2020,is_oa:true"
     ).json()
 
@@ -291,7 +319,7 @@ def test_search():
 
 @requires_api_key(reason="OpenAlex requires authentication for search_filter queries")
 def test_search_filter():
-    r = requests.get(
+    r = httpx2.get(
         "https://api.openalex.org/authors?filter=display_name.search:einstein"
     ).json()
 
@@ -316,7 +344,7 @@ def test_code_examples():
     # /works?filter=institutions.is_global_south:true,type:dataset&group-by=institutions.country_code  # noqa
     # /works?filter=institutions.is_global_south:true,type:dataset&group-by=institutions.country_code&sort=count:desc  # noqa
 
-    r_original = requests.get(
+    r_original = httpx2.get(
         "https://api.openalex.org/works?filter=institutions.is_global_south:true"
         + ",type:dataset&group-by=institutions.country_code"
     ).json()

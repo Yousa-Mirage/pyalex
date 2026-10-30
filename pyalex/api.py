@@ -1,5 +1,7 @@
 import logging
+import time
 from collections.abc import Callable
+from collections.abc import Generator
 from collections.abc import Iterator
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
@@ -7,6 +9,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Generic
 from typing import Literal
+from typing import Self
 from typing import TypedDict
 from typing import TypeVar
 from typing import cast
@@ -14,11 +17,7 @@ from typing import overload
 from urllib.parse import quote_plus
 from urllib.parse import urlunparse
 
-import requests
-import requests.adapters
-from requests.auth import AuthBase
-from typing_extensions import Self
-from urllib3.util import Retry
+import httpx2
 
 try:
     __version__ = version("pyalex")
@@ -264,27 +263,71 @@ def _params_merge(params: dict[str, Any], add_params: dict[str, Any]) -> None:
             params[k] = add_params[k]
 
 
-def _get_requests_session() -> requests.Session:
-    """Create a Requests session with automatic retry.
+_client: httpx2.Client | None = None
+
+
+def _get_client() -> httpx2.Client:
+    """Return the shared HTTP client.
+
+    A single long-lived client keeps the connection pool warm, so consecutive
+    requests reuse already established TLS connections instead of handshaking
+    again.
 
     Returns
     -------
-    requests.Session
-        Requests session with retry configuration.
+    httpx2.Client
+        Shared client with the configured timeout and connection limits.
     """
-    # create an Requests Session with automatic retry:
-    requests_session = requests.Session()
-    retries = Retry(
-        total=config.max_retries,
-        backoff_factor=config.retry_backoff_factor,
-        status_forcelist=config.retry_http_codes,
-        allowed_methods={"GET", "POST"},
-    )
-    requests_session.mount(
-        "https://", requests.adapters.HTTPAdapter(max_retries=retries)
-    )
+    global _client
+    if _client is None:
+        _client = httpx2.Client(
+            timeout=config.timeout,
+            follow_redirects=True,
+            limits=httpx2.Limits(
+                max_connections=100,
+                max_keepalive_connections=20,
+            ),
+        )
 
-    return requests_session
+    return _client
+
+
+def _send(client: httpx2.Client, url: str, *, auth: httpx2.Auth) -> httpx2.Response:
+    """Send a GET request, retrying transport errors and configured status codes.
+
+    Parameters
+    ----------
+    client : httpx2.Client
+        Client to use, normally the shared one.
+    url : str
+        URL to request.
+    auth : httpx2.Auth
+        Authentication flow adding the OpenAlex headers.
+
+    Returns
+    -------
+    httpx2.Response
+        The first response that is not retried.
+    """
+    attempts = max(1, config.max_retries + 1)
+
+    for attempt in range(attempts):
+        is_last_attempt = attempt + 1 >= attempts
+        try:
+            response = client.get(url, auth=auth, timeout=config.timeout)
+        except httpx2.TransportError:
+            if is_last_attempt:
+                raise
+            time.sleep(config.retry_backoff_factor * (2**attempt))
+            continue
+
+        if response.status_code in config.retry_http_codes and not is_last_attempt:
+            time.sleep(config.retry_backoff_factor * (2**attempt))
+            continue
+
+        return response
+
+    raise RuntimeError("unreachable: retry loop always returns or raises")
 
 
 def invert_abstract(inv_index: dict[str, list[int]] | None) -> str | None:
@@ -430,7 +473,7 @@ class Paginator(Generic[T]):
         self.n = 0
 
         self._next_value: str | int | None = value
-        self._session = _get_requests_session()
+        self._client = _get_client()
 
     def __iter__(self) -> Iterator[OpenAlexResponseList[T]]:
         return self
@@ -458,7 +501,7 @@ class Paginator(Generic[T]):
         if self.per_page is not None:
             self.endpoint_class._add_params("per-page", self.per_page)
 
-        r = self.endpoint_class._get_from_url(self.endpoint_class.url, self._session)
+        r = self.endpoint_class._get_from_url(self.endpoint_class.url, self._client)
         assert isinstance(r, OpenAlexResponseList)
 
         if self.method == "cursor":
@@ -477,8 +520,8 @@ class Paginator(Generic[T]):
         return r
 
 
-class OpenAlexAuth(AuthBase):
-    """OpenAlex auth class based on requests auth.
+class OpenAlexAuth(httpx2.Auth):
+    """OpenAlex auth class based on httpx auth.
 
     Includes the email, api_key, and user-agent headers.
 
@@ -491,20 +534,19 @@ class OpenAlexAuth(AuthBase):
     def __init__(self, config: AlexConfig) -> None:
         self.config = config
 
-    def __call__(self, r: requests.PreparedRequest) -> requests.PreparedRequest:
-        if r.headers is None:
-            r.headers = {}
-
+    def auth_flow(
+        self, request: httpx2.Request
+    ) -> Generator[httpx2.Request, httpx2.Response, None]:
         if self.config.api_key:
-            r.headers["Authorization"] = f"Bearer {self.config.api_key}"
+            request.headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         if self.config.email:
-            r.headers["From"] = self.config.email
+            request.headers["From"] = self.config.email
 
         if self.config.user_agent:
-            r.headers["User-Agent"] = self.config.user_agent
+            request.headers["User-Agent"] = self.config.user_agent
 
-        return r
+        yield request
 
 
 ResponseT = TypeVar("ResponseT", bound=OpenAlexEntity)
@@ -515,7 +557,7 @@ def _fetch_entities(
     *,
     params: str | list[str] | dict[str, Any] | None,
     resource_class: type[ResponseT],
-    session: requests.Session | None = None,
+    client: httpx2.Client | None = None,
 ) -> ResponseT | OpenAlexResponseList[ResponseT]:
     """Perform a GET request and parse the OpenAlex response.
 
@@ -530,20 +572,20 @@ def _fetch_entities(
         The query parameters of the caller. Only used to detect ``group-by``.
     resource_class : type[OpenAlexEntity]
         Class used to wrap every record of the response.
-    session : requests.Session, optional
-        Session to reuse. A new one is created when omitted.
+    client : httpx2.Client, optional
+        Client to reuse. The shared client is used when omitted.
 
     Returns
     -------
     OpenAlexEntity | OpenAlexResponseList
         A single entity, or a list of entities with metadata.
     """
-    if session is None:
-        session = _get_requests_session()
+    if client is None:
+        client = _get_client()
 
     logger.debug(f"GET request to URL: {url}")
 
-    res = session.get(url, auth=OpenAlexAuth(config), timeout=config.timeout)
+    res = _send(client, url, auth=OpenAlexAuth(config))
 
     if res.status_code == 400:
         payload = res.json()
@@ -688,13 +730,13 @@ class BaseOpenAlex(Generic[T]):
         return r.meta["count"]
 
     def _get_from_url(
-        self, url: str, session: requests.Session | None = None
+        self, url: str, client: httpx2.Client | None = None
     ) -> T | OpenAlexResponseList[T]:
         return _fetch_entities(
             url,
             params=self.params,
             resource_class=self.resource_class,
-            session=session,
+            client=client,
         )
 
     def get(
@@ -1059,12 +1101,7 @@ class BaseContent:
         """
         content_url = f"https://content.openalex.org/works/{self.key}"
 
-        res = _get_requests_session().get(
-            content_url,
-            auth=OpenAlexAuth(config),
-            timeout=config.timeout,
-            allow_redirects=True,
-        )
+        res = _send(_get_client(), content_url, auth=OpenAlexAuth(config))
         res.raise_for_status()
         return res.content
 
