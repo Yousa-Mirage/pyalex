@@ -19,7 +19,6 @@ The following entities of OpenAlex are currently supported by PyAlex:
 - [x] Author
 - [x] Source
 - [x] Institution
-- [x] Concept
 - [x] Topic
 - [x] Publisher
 - [x] Funder
@@ -36,7 +35,6 @@ Including the following functionality:
 - [x] Sample
 - [x] Pagination
 - [x] Autocomplete endpoint
-- [x] N-grams [Deprecated by OpenAlex]
 - [x] Authentication
 
 We aim to cover the entire API, and we are looking for help. We are welcoming Pull Requests.
@@ -72,7 +70,6 @@ from pyalex import (
   Publishers,
   Funders,
   Awards,
-  Concepts,
 )
 ```
 
@@ -106,7 +103,7 @@ For more information, see the [OpenAlex Rate limits and authentication documenta
 
 ### Get single entity
 
-Get a single Work, Author, Source, Institution, Concept, Topic, Publisher, Funders or Awards from OpenAlex by the
+Get a single Work, Author, Source, Institution, Topic, Publisher, Funders or Awards from OpenAlex by the
 OpenAlex ID, or by DOI or ROR.
 
 ```python
@@ -128,7 +125,7 @@ Works()["W2741809807"]["open_access"]
 {'is_oa': True, 'oa_status': 'gold', 'oa_url': 'https://doi.org/10.7717/peerj.4375'}
 ```
 
-The previous works also for Authors, Sources, Institutions, Concepts and Topics
+The previous works also for Authors, Sources, Institutions and Topics
 
 ```python
 Authors()["A5027479191"]
@@ -137,7 +134,7 @@ Authors()["https://orcid.org/0000-0002-4297-0502"]  # same
 
 #### Get random
 
-Get a [random Work, Author, Source, Institution, Concept, Topic, Publisher or Funder](https://docs.openalex.org/how-to-use-the-api/get-single-entities/random-result).
+Get a [random Work, Author, Source, Institution, Topic, Publisher or Funder](https://docs.openalex.org/how-to-use-the-api/get-single-entities/random-result).
 
 ```python
 Works().random()
@@ -467,16 +464,6 @@ You can also use the filters to autocomplete:
 from pyalex import Works
 
 r = Works().filter(publication_year=2023).autocomplete("planetary boundaries")
-```
-
-
-### Get N-grams
-
-OpenAlex reference: [Get N-grams](https://docs.openalex.org/api-entities/works/get-n-grams).
-
-
-```python
-Works()["W2023271753"].ngrams()
 ```
 
 

@@ -1,5 +1,4 @@
 import logging
-import warnings
 from collections.abc import Callable
 from collections.abc import Iterator
 from importlib.metadata import PackageNotFoundError
@@ -698,37 +697,12 @@ class BaseOpenAlex(Generic[T]):
             session=session,
         )
 
-    @overload
     def get(
         self,
-        return_meta: Literal[False] = False,
         page: int | None = None,
         per_page: int | None = None,
         cursor: str | None = None,
-    ) -> OpenAlexResponseList[T]: ...
-    @overload
-    def get(
-        self,
-        return_meta: Literal[True],
-        page: int | None = None,
-        per_page: int | None = None,
-        cursor: str | None = None,
-    ) -> tuple[OpenAlexResponseList[T], Meta | None]: ...
-    @overload
-    def get(
-        self,
-        return_meta: bool,
-        page: int | None = None,
-        per_page: int | None = None,
-        cursor: str | None = None,
-    ) -> OpenAlexResponseList[T] | tuple[OpenAlexResponseList[T], Meta | None]: ...
-    def get(
-        self,
-        return_meta: bool = False,
-        page: int | None = None,
-        per_page: int | None = None,
-        cursor: str | None = None,
-    ) -> OpenAlexResponseList[T] | tuple[OpenAlexResponseList[T], Meta | None]:
+    ) -> OpenAlexResponseList[T]:
         if per_page is not None and (
             not isinstance(per_page, int) or (per_page < 1 or per_page > 200)
         ):
@@ -741,16 +715,7 @@ class BaseOpenAlex(Generic[T]):
 
         resp_list = self._get_from_url(self.url)
         assert isinstance(resp_list, OpenAlexResponseList)
-
-        if return_meta:
-            warnings.warn(
-                "return_meta is deprecated, call .meta on the result",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            return resp_list, resp_list.meta
-        else:
-            return resp_list
+        return resp_list
 
     def paginate(
         self,
@@ -1032,29 +997,13 @@ class BaseOpenAlex(Generic[T]):
         self._add_params("select", s)
         return self
 
-    @overload
-    def autocomplete(
-        self, s: str, return_meta: Literal[False] = False
-    ) -> OpenAlexResponseList[T]: ...
-    @overload
-    def autocomplete(
-        self, s: str, return_meta: Literal[True]
-    ) -> tuple[OpenAlexResponseList[T], Meta | None]: ...
-    @overload
-    def autocomplete(
-        self, s: str, return_meta: bool
-    ) -> OpenAlexResponseList[T] | tuple[OpenAlexResponseList[T], Meta | None]: ...
-    def autocomplete(
-        self, s: str, return_meta: bool = False
-    ) -> OpenAlexResponseList[T] | tuple[OpenAlexResponseList[T], Meta | None]:
+    def autocomplete(self, s: str) -> OpenAlexResponseList[T]:
         """Return the OpenAlex autocomplete results.
 
         Parameters
         ----------
         s : str
             String to autocomplete.
-        return_meta : bool, optional
-            Whether to return metadata.
 
         Returns
         -------
@@ -1077,16 +1026,7 @@ class BaseOpenAlex(Generic[T]):
             )
         )
         assert isinstance(resp_list, OpenAlexResponseList)
-
-        if return_meta:
-            warnings.warn(
-                "return_meta is deprecated, call .meta on the result",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            return resp_list, resp_list.meta
-        else:
-            return resp_list
+        return resp_list
 
 
 class BaseContent:
@@ -1174,12 +1114,6 @@ class TEI(BaseContent):
         return f"https://content.openalex.org/works/{self.key}.grobid-xml"
 
 
-NGramsResult = (
-    OpenAlexResponseList[OpenAlexEntity]
-    | tuple[OpenAlexResponseList[OpenAlexEntity], Meta | None]
-)
-
-
 class Work(OpenAlexEntity):
     """Class representing a work entity in OpenAlex."""
 
@@ -1188,52 +1122,6 @@ class Work(OpenAlexEntity):
             return invert_abstract(self["abstract_inverted_index"])
 
         return super().__getitem__(key)
-
-    @overload
-    def ngrams(
-        self, return_meta: Literal[False] = False
-    ) -> OpenAlexResponseList[OpenAlexEntity]: ...
-    @overload
-    def ngrams(
-        self, return_meta: Literal[True]
-    ) -> tuple[OpenAlexResponseList[OpenAlexEntity], Meta | None]: ...
-    @overload
-    def ngrams(self, return_meta: bool) -> NGramsResult: ...
-    def ngrams(self, return_meta: bool = False) -> NGramsResult:
-        """Get n-grams for the work.
-
-        Parameters
-        ----------
-        return_meta : bool, optional
-            Whether to return metadata.
-
-        Returns
-        -------
-        OpenAlexResponseList[OpenAlexEntity]
-            List of n-grams.
-        """
-        openalex_id = self["id"].split("/")[-1]
-        n_gram_url = f"{config.openalex_url}/works/{openalex_id}/ngrams"
-
-        res = _get_requests_session().get(
-            n_gram_url, auth=OpenAlexAuth(config), timeout=config.timeout
-        )
-        res.raise_for_status()
-        results = res.json()
-
-        resp_list = OpenAlexResponseList[OpenAlexEntity](
-            results["ngrams"], results["meta"]
-        )
-
-        if return_meta:
-            warnings.warn(
-                "return_meta is deprecated, call .meta on the result",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            return resp_list, resp_list.meta
-        else:
-            return resp_list
 
     @property
     def pdf(self) -> PDF:
@@ -1408,32 +1296,6 @@ class autocompletes:
 
     def __getitem__(self, key: str) -> OpenAlexResponseList[Autocomplete]:
         return autocomplete(key)
-
-
-class Concept(OpenAlexEntity):
-    """Class representing a concept entity in OpenAlex."""
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        warnings.warn(
-            "Concept is deprecated by OpenAlex and replaced by topics.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
-
-
-class Concepts(BaseOpenAlex[Concept]):
-    """Class representing a collection of concept entities in OpenAlex."""
-
-    resource_class = Concept
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        warnings.warn(
-            "Concepts is deprecated by OpenAlex and replaced by topics.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
 
 
 def autocomplete(s: str) -> OpenAlexResponseList[Autocomplete]:

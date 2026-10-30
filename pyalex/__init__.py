@@ -14,8 +14,6 @@ from pyalex.api import Author
 from pyalex.api import Authors
 from pyalex.api import Award
 from pyalex.api import Awards
-from pyalex.api import Concept
-from pyalex.api import Concepts
 from pyalex.api import Domain
 from pyalex.api import Domains
 from pyalex.api import Field
@@ -48,8 +46,6 @@ __all__ = [
     "Authors",
     "Award",
     "Awards",
-    "Concept",
-    "Concepts",
     "Domain",
     "Domains",
     "Field",

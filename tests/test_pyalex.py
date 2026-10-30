@@ -12,7 +12,6 @@ from requests import HTTPError
 import pyalex
 from pyalex import Authors
 from pyalex import Awards
-from pyalex import Concepts
 from pyalex import Domains
 from pyalex import Fields
 from pyalex import Funders
@@ -108,14 +107,6 @@ def test_request_timeout(monkeypatch):
 @pytest.mark.parametrize("entity", OPEN_ALEX_ENTITIES)
 def test_meta_entities(entity):
     r = entity().get()
-    assert r.meta.get("count", False)
-
-
-@requires_api_key(reason="OpenAlex requires authentication for unfiltered queries")
-@pytest.mark.filterwarnings("ignore:.*deprecated.*:DeprecationWarning")
-def test_meta_entities_deprecated():
-    r = Concepts().get()
-    assert r.meta is not None
     assert r.meta.get("count", False)
 
 
@@ -361,20 +352,6 @@ def test_serializable_list(tmpdir):
 
     assert len(works) == 25
     assert all(isinstance(w, Work) for w in works)
-
-
-@pytest.mark.skip("This test is not working due to unavailable API.")
-def test_ngrams_without_metadata():
-    r = Works()["W2023271753"].ngrams()
-
-    assert len(r) == 1068
-
-
-@pytest.mark.skip("This test is not working due to unavailable API.")
-def test_ngrams_with_metadata():
-    _r, meta = Works()["W2023271753"].ngrams()
-
-    assert meta["count"] == 1068
 
 
 @requires_api_key(reason="OpenAlex requires authentication for random() endpoint")
