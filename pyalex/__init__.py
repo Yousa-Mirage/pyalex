@@ -1,9 +1,14 @@
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _version
+
 try:
-    from pyalex._version import __version__
-    from pyalex._version import __version_tuple__
-except ImportError:
+    __version__ = _version("pyalex")
+except PackageNotFoundError:  # pragma: no cover
     __version__ = "0.0.0"
-    __version_tuple__ = (0, 0, 0)
+
+__version_tuple__: tuple[int, ...] = tuple(
+    int(part) for part in __version__.split(".")[:3] if part.isdigit()
+)
 
 from pyalex.api import Author
 from pyalex.api import Authors
@@ -39,36 +44,36 @@ from pyalex.api import config
 from pyalex.api import invert_abstract
 
 __all__ = [
+    "Author",
+    "Authors",
     "Award",
     "Awards",
-    "Works",
-    "Work",
-    "Authors",
-    "Author",
-    "Sources",
-    "Source",
+    "Concept",
+    "Concepts",
+    "Domain",
+    "Domains",
+    "Field",
+    "Fields",
     "Funder",
     "Funders",
-    "Publishers",
-    "Publisher",
-    "Institutions",
     "Institution",
-    "Concepts",
-    "Concept",
-    "Domains",
-    "Domain",
-    "Fields",
-    "Field",
-    "Subfields",
-    "Subfield",
-    "Topics",
-    "Topic",
-    "Keywords",
-    "Keyword",
-    "People",
+    "Institutions",
     "Journals",
+    "Keyword",
+    "Keywords",
+    "OpenAlexResponseList",
+    "People",
+    "Publisher",
+    "Publishers",
+    "Source",
+    "Sources",
+    "Subfield",
+    "Subfields",
+    "Topic",
+    "Topics",
+    "Work",
+    "Works",
     "autocomplete",
     "config",
     "invert_abstract",
-    "OpenAlexResponseList",
 ]
