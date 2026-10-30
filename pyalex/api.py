@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Final
 from typing import Literal
+from typing import NotRequired
 from typing import Self
 from typing import TypedDict
 from typing import cast
@@ -385,7 +386,7 @@ class OpenAlexEntity(dict[str, Any]):
     """Base class for OpenAlex entities."""
 
 
-class Meta(TypedDict, total=False):
+class Meta(TypedDict):
     """Metadata returned alongside a list of OpenAlex entities.
 
     All keys are optional because the exact set depends on the endpoint and
@@ -394,10 +395,10 @@ class Meta(TypedDict, total=False):
 
     count: int
     db_response_time_ms: int
-    page: int
-    per_page: int
-    next_cursor: str | None
-    groups_count: int
+    page: NotRequired[int]
+    per_page: NotRequired[int]
+    next_cursor: NotRequired[str | None]
+    groups_count: NotRequired[int]
 
 
 class OpenAlexResponseList[T: OpenAlexEntity](list[T]):
@@ -1153,6 +1154,32 @@ class TEI(BaseContent):
 class Work(OpenAlexEntity):
     """Class representing a work entity in OpenAlex."""
 
+    @overload
+    def __getitem__(self, key: Literal["abstract"]) -> str | None: ...
+    @overload
+    def __getitem__(
+        self, key: Literal["abstract_inverted_index"]
+    ) -> dict[str, list[int]] | None: ...
+    @overload
+    def __getitem__(self, key: Literal["id"]) -> str: ...
+    @overload
+    def __getitem__(self, key: Literal["doi"]) -> str | None: ...
+    @overload
+    def __getitem__(self, key: Literal["display_name"]) -> str | None: ...
+    @overload
+    def __getitem__(self, key: Literal["publication_year"]) -> int | None: ...
+    @overload
+    def __getitem__(self, key: Literal["cited_by_count"]) -> int: ...
+    @overload
+    def __getitem__(self, key: Literal["type"]) -> str: ...
+    @overload
+    def __getitem__(self, key: Literal["open_access"]) -> dict[str, Any]: ...
+    @overload
+    def __getitem__(self, key: Literal["referenced_works"]) -> list[str]: ...
+    @overload
+    def __getitem__(self, key: Literal["authorships"]) -> list[dict[str, Any]]: ...
+    @overload
+    def __getitem__(self, key: str) -> Any: ...
     @override
     def __getitem__(self, key: str) -> Any:
         if key == "abstract":
