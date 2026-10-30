@@ -256,6 +256,21 @@ def test_query_error():
         Works().filter(publication_year_error=2020).get()
 
 
+def test_filter_on_indexed_query_raises():
+    """Adding a filter to an indexed query must not be a silent no-op."""
+    query = Works(params="W4238809453")
+
+    with pytest.raises(QueryError):
+        query.filter(publication_year=2020)
+
+
+def test_sort_on_indexed_query_raises():
+    query = Works(params="W4238809453")
+
+    with pytest.raises(QueryError):
+        query.sort(cited_by_count="desc")
+
+
 @requires_api_key(reason="OpenAlex requires authentication for filter queries")
 def test_data_publications():
     w = (

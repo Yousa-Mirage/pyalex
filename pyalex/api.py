@@ -827,6 +827,14 @@ class BaseOpenAlex(Generic[T]):
                 _params_merge(self.params[argument], new_params)
             else:
                 self.params[argument] = new_params
+        else:
+            # ``params`` is a record id (or a list of ids) because the object was
+            # used as ``Works()["W123"]`` or ``Works().random()``. Mixing query
+            # parameters into it would be silently ignored, so fail loudly.
+            raise QueryError(
+                "Cannot add query parameters to a single-entity request. "
+                "Build a new query object instead, e.g. Works().filter(...)."
+            )
 
         logger.debug(f"Params updated: {self.params}")
 
