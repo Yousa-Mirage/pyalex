@@ -1,6 +1,7 @@
 import os
 from functools import wraps
 
+import httpx2
 import pytest
 
 import pyalex
@@ -40,6 +41,35 @@ def requires_api_key(reason="OpenAlex requires authentication for this operation
 @requires_api_key(reason="OpenAlex requires authentication for unfiltered queries")
 def test_cursor_no_filter():
     assert len(list(pyalex.Works().paginate(per_page=200, n_max=1000))) == 5
+
+
+def test_page_paging_stops_at_last_page(monkeypatch):
+    """Basic paging must not request a page beyond the result set."""
+    calls = []
+
+    def fake_get(self, url, **kwargs):
+        calls.append(url)
+        page = len(calls)
+        results = (
+            [{"id": f"https://openalex.org/A{i}"} for i in range(200)]
+            if page <= 2
+            else []
+        )
+        return httpx2.Response(
+            200,
+            json={
+                "results": results,
+                "meta": {"count": 400, "page": page, "per_page": 200},
+            },
+            request=httpx2.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx2.Client, "get", fake_get)
+
+    pages = list(Authors().paginate(method="page", per_page=200, n_max=None))
+
+    assert len(pages) == 2
+    assert len(calls) == 2
 
 
 @requires_api_key(reason="OpenAlex requires authentication for search_filter queries")

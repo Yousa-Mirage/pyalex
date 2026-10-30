@@ -532,11 +532,19 @@ class Paginator[T: OpenAlexEntity]:
             self._next_value = r.meta["next_cursor"]
 
         if self.method == "page":
-            if len(r) > 0:
-                assert r.meta is not None
-                self._next_value = r.meta["page"] + 1
-            else:
+            # Stop at the last page instead of asking for one page too many
+            # (that extra request is a guaranteed 400 when ``sample`` is used).
+            assert r.meta is not None
+            current_page = r.meta.get("page", 1)
+            per_page = r.meta.get("per_page") or self.per_page
+            total = r.meta.get("count", 0)
+
+            if per_page is None:
                 self._next_value = None
+            else:
+                self._next_value = (
+                    current_page + 1 if current_page * per_page < total else None
+                )
 
         self.n = self.n + len(r)
 
