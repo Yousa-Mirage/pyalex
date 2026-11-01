@@ -124,13 +124,6 @@ dependencies = [
     { name = "httpx2" },
 ]
 
-[package.optional-dependencies]
-test = [
-    { name = "pytest" },
-    { name = "pytest-xdist" },
-    { name = "python-dotenv" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "pytest" },
@@ -139,15 +132,14 @@ dev = [
     { name = "ruff" },
     { name = "ty" },
 ]
+test = [
+    { name = "pytest" },
+    { name = "pytest-xdist" },
+    { name = "python-dotenv" },
+]
 
 [package.metadata]
-requires-dist = [
-    { name = "httpx2", specifier = ">=2.16" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "pytest-xdist", marker = "extra == 'test'" },
-    { name = "python-dotenv", marker = "extra == 'test'" },
-]
-provides-extras = ["test"]
+requires-dist = [{ name = "httpx2", specifier = ">=2.16" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -156,6 +148,11 @@ dev = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "ruff", specifier = "==0.17.3" },
     { name = "ty", specifier = "==0.0.94" },
+]
+test = [
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-xdist", specifier = ">=3.0" },
+    { name = "python-dotenv", specifier = ">=1.0" },
 ]
 
 [[package]]
