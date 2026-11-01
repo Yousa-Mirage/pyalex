@@ -9,6 +9,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Build sdist and wheel
+        run: uv build
+      - name: Install wheel with locked runtime dependencies
+        run: |
+          uv sync --locked --no-dev --no-install-project
+          uv pip install --python .venv/bin/python --no-deps dist/*.whl
+      - name: Check installed package
+        run: |
+          .venv/bin/python -I - <<'PY'
+          from importlib import import_module
+          from importlib.metadata import distribution
+          from importlib.resources import files
+
+          import pyalex
+
+          package = distribution("pyalex")
+          assert pyalex.__version__ == package.version
+          assert package.metadata["License-Expression"] == "MIT"
+          assert any(str(path).endswith("/licenses/LICENSE") for path in package.files)
+          assert files("pyalex").joinpath("py.typed").is_file()
+          for name in ("api", "config", "http", "models"):
+              import_module(f"pyalex.{name}")
+          for name in pyalex.__all__:
+              getattr(pyalex, name)
+          print(f"Installed wheel verified: pyalex {package.version}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
   test:
     runs-on: ubuntu-latest
     strategy:
