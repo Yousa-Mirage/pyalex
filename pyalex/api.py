@@ -1,18 +1,11 @@
-import html
 import logging
-import time
 from collections.abc import Callable
-from collections.abc import Generator
 from collections.abc import Iterator
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Final
 from typing import Literal
-from typing import NotRequired
 from typing import Self
-from typing import TypedDict
 from typing import cast
 from typing import overload
 from typing import override
@@ -21,98 +14,35 @@ from urllib.parse import urlunparse
 
 import httpx2
 
-try:
-    __version__ = version("pyalex")
-except PackageNotFoundError:  # pragma: no cover
-    __version__ = "0.0.0"
-
-logger = logging.getLogger("pyalex")
-
-
-class AlexConfig(dict[str, Any]):
-    """Configuration class for OpenAlex API.
-
-    Attributes
-    ----------
-    email : str
-        Email address for API requests.
-    api_key : str
-        API key for authentication.
-    user_agent : str
-        User agent string for API requests.
-    openalex_url : str
-        Base URL for OpenAlex API.
-    timeout : float
-        Timeout in seconds for a single HTTP request.
-    max_retries : int
-        Maximum number of retries for API requests.
-    retry_backoff_factor : float
-        Backoff factor for retries.
-    retry_http_codes : list
-        List of HTTP status codes to retry on.
-    """
-
-    # Attributes with type annotations for static analysis and autocompletion
-    email: str | None
-    api_key: str | None
-    user_agent: str
-    openalex_url: str
-    timeout: float
-    max_retries: int
-    retry_backoff_factor: float
-    retry_http_codes: list[int]
-
-    # Define all attributes in __init__ to ensure that
-    # type checkers can and will only recognize them.
-    # This provides static checking support for potential typos by users
-    # For example, type checker will not allow `config.emaila`
-    # but `config.emaila` can still run and be accessed
-    def __init__(
-        self,
-        email: str | None = None,
-        api_key: str | None = None,
-        user_agent: str | None = None,
-        openalex_url: str = "https://api.openalex.org",
-        timeout: float = 60.0,
-        max_retries: int = 0,
-        retry_backoff_factor: float = 0.1,
-        retry_http_codes: list[int] | None = None,
-    ) -> None:
-        if user_agent is None:
-            user_agent = f"pyalex/{__version__}"
-        if retry_http_codes is None:
-            retry_http_codes = [429, 500, 503]
-
-        super().__init__(
-            email=email,
-            api_key=api_key,
-            user_agent=user_agent,
-            openalex_url=openalex_url,
-            timeout=timeout,
-            max_retries=max_retries,
-            retry_backoff_factor=retry_backoff_factor,
-            retry_http_codes=retry_http_codes,
-        )
-
-    # Enable dynamic property capture only at runtime
-    # Type checkers only recognize properties explicitly declared above
-    # but at runtime, dynamic dict attributes can still be accessed.
-    if not TYPE_CHECKING:
-
-        def __getattr__(self, key: str) -> Any:
-            try:
-                return super().__getitem__(key)
-            except KeyError:
-                raise AttributeError(key) from None
-
-        def __setattr__(self, key: str, value: Any) -> None:
-            super().__setitem__(key, value)
-
-
-config = AlexConfig(
-    email=None,
-    api_key=None,
-)
+from pyalex.config import AlexConfig as AlexConfig
+from pyalex.config import config
+from pyalex.http import CreditsExhaustedError as CreditsExhaustedError
+from pyalex.http import OpenAlexAuth as OpenAlexAuth
+from pyalex.http import QueryError as QueryError
+from pyalex.http import RateLimit as RateLimit
+from pyalex.http import _extract_ratelimit
+from pyalex.http import _get_client
+from pyalex.http import _send
+from pyalex.models import PDF as PDF
+from pyalex.models import TEI as TEI
+from pyalex.models import Author as Author
+from pyalex.models import Autocomplete as Autocomplete
+from pyalex.models import Award as Award
+from pyalex.models import Domain as Domain
+from pyalex.models import Field as Field
+from pyalex.models import Funder as Funder
+from pyalex.models import GroupByBucket as GroupByBucket
+from pyalex.models import Institution as Institution
+from pyalex.models import Keyword as Keyword
+from pyalex.models import Meta
+from pyalex.models import OpenAlexEntity as OpenAlexEntity
+from pyalex.models import OpenAlexResponseList as OpenAlexResponseList
+from pyalex.models import Publisher as Publisher
+from pyalex.models import Source as Source
+from pyalex.models import Subfield as Subfield
+from pyalex.models import Topic as Topic
+from pyalex.models import Work as Work
+from pyalex.models import invert_abstract as invert_abstract
 
 
 class or_(dict[str, Any]):
@@ -120,15 +50,7 @@ class or_(dict[str, Any]):
 
 
 class _LogicalExpression:
-    """Base class for logical expressions.
-
-    Attributes
-    ----------
-    token : str
-        Token representing the logical operation.
-    value : any
-        Value to be used in the logical expression.
-    """
+    """Base class for logical filter expressions."""
 
     token: str | None = None
 
@@ -141,417 +63,86 @@ class _LogicalExpression:
 
 
 class not_(_LogicalExpression):
-    """Logical NOT expression class."""
-
     token = "!"
 
 
 class gt_(_LogicalExpression):
-    """Logical greater than expression class."""
-
     token = ">"
 
 
 class lt_(_LogicalExpression):
-    """Logical less than expression class."""
-
     token = "<"
 
 
-def _quote_oa_value(v: Any) -> Any:
-    """Prepare a value for the OpenAlex API.
-
-    Applies URL encoding to strings and converts booleans to lowercase strings.
-
-    Parameters
-    ----------
-    v : any
-        Value to be prepared.
-
-    Returns
-    -------
-    any
-        Prepared value.
-    """
-
-    # workaround for bug https://groups.google.com/u/1/g/openalex-users/c/t46RWnzZaXc
-    if isinstance(v, bool):
-        return str(v).lower()
-
-    if isinstance(v, _LogicalExpression) and isinstance(v.value, str):
-        # Return a new instance instead of mutating ``v`` in place: repeated
-        # calls (e.g. every access to ``.url``) must not re-encode the value.
-        return type(v)(quote_plus(v.value))
-
-    if isinstance(v, str):
-        return quote_plus(v)
-
-    return v
+def _quote_oa_value(value: Any) -> Any:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, _LogicalExpression) and isinstance(value.value, str):
+        return type(value)(quote_plus(value.value))
+    if isinstance(value, str):
+        return quote_plus(value)
+    return value
 
 
 def _flatten_kv(
-    d: Any, prefix: str | None = None, logical: Literal["+", "|"] = "+"
+    data: Any, prefix: str | None = None, logical: Literal["+", "|"] = "+"
 ) -> str:
-    """Flatten a dictionary into a key-value string for the OpenAlex API.
-
-    Parameters
-    ----------
-    d : dict
-        Dictionary to be flattened.
-    prefix : str, optional
-        Prefix for the keys.
-    logical : Literal["+", "|"] , optional
-        Logical operator to join values.
-
-    Returns
-    -------
-    str
-        Flattened key-value string.
-    """
-    if prefix is None and not isinstance(d, dict):
+    if prefix is None and not isinstance(data, dict):
         raise ValueError("prefix should be set if d is not a dict")
-
-    if isinstance(d, dict):
-        logical_subd = "|" if isinstance(d, or_) else logical
-
-        t = []
-        for k, v in d.items():
-            x = _flatten_kv(
-                v, prefix=f"{prefix}.{k}" if prefix else f"{k}", logical=logical_subd
+    if isinstance(data, dict):
+        logical_subd = "|" if isinstance(data, or_) else logical
+        return ",".join(
+            _flatten_kv(
+                value,
+                prefix=f"{prefix}.{key}" if prefix else f"{key}",
+                logical=logical_subd,
             )
-            t.append(x)
-
-        return ",".join(t)
-    elif isinstance(d, list):
-        list_str = logical.join([f"{_quote_oa_value(i)}" for i in d])
-        return f"{prefix}:{list_str}"
-    else:
-        return f"{prefix}:{_quote_oa_value(d)}"
+            for key, value in data.items()
+        )
+    if isinstance(data, list):
+        return f"{prefix}:{logical.join(str(_quote_oa_value(item)) for item in data)}"
+    return f"{prefix}:{_quote_oa_value(data)}"
 
 
 def _params_merge(params: dict[str, Any], add_params: dict[str, Any]) -> None:
-    """Merge additional parameters into existing parameters.
-
-    Parameters
-    ----------
-    params : dict
-        Existing parameters.
-    add_params : dict
-        Additional parameters to be merged.
-    """
-    for k in add_params:
-        if (
-            k in params
-            and isinstance(params[k], dict)
-            and isinstance(add_params[k], dict)
-        ):
-            _params_merge(params[k], add_params[k])
+    for key, value in add_params.items():
+        if key in params and isinstance(params[key], dict) and isinstance(value, dict):
+            _params_merge(params[key], value)
         elif (
-            k in params
-            and not isinstance(params[k], list)
-            and isinstance(add_params[k], list)
+            key in params
+            and not isinstance(params[key], list)
+            and isinstance(value, list)
         ):
-            # example: params="a" and add_params=["b", "c"]
-            params[k] = [params[k]] + add_params[k]
+            params[key] = [params[key], *value]
         elif (
-            k in params
-            and isinstance(params[k], list)
-            and not isinstance(add_params[k], list)
+            key in params
+            and isinstance(params[key], list)
+            and not isinstance(value, list)
         ):
-            # example: params=["b", "c"] and add_params="a"
-            params[k] = params[k] + [add_params[k]]
-        elif k in params:
-            params[k] = [params[k], add_params[k]]
+            params[key] = [*params[key], value]
+        elif key in params:
+            params[key] = [params[key], value]
         else:
-            params[k] = add_params[k]
-
-
-_client: httpx2.Client | None = None
-
-
-def _get_client() -> httpx2.Client:
-    """Return the shared HTTP client.
-
-    A single long-lived client keeps the connection pool warm, so consecutive
-    requests reuse already established TLS connections instead of handshaking
-    again.
-
-    Returns
-    -------
-    httpx2.Client
-        Shared client with the configured timeout and connection limits.
-    """
-    global _client
-    if _client is None:
-        _client = httpx2.Client(
-            timeout=config.timeout,
-            follow_redirects=True,
-            limits=httpx2.Limits(
-                max_connections=100,
-                max_keepalive_connections=20,
-            ),
-        )
-
-    return _client
-
-
-def _send(client: httpx2.Client, url: str, *, auth: httpx2.Auth) -> httpx2.Response:
-    """Send a GET request, retrying transport errors and configured status codes.
-
-    Parameters
-    ----------
-    client : httpx2.Client
-        Client to use, normally the shared one.
-    url : str
-        URL to request.
-    auth : httpx2.Auth
-        Authentication flow adding the OpenAlex headers.
-
-    Returns
-    -------
-    httpx2.Response
-        The first response that is not retried.
-    """
-    attempts = max(1, config.max_retries + 1)
-
-    for attempt in range(attempts):
-        is_last_attempt = attempt + 1 >= attempts
-        try:
-            response = client.get(url, auth=auth, timeout=config.timeout)
-        except httpx2.TransportError:
-            if is_last_attempt:
-                raise
-            time.sleep(config.retry_backoff_factor * (2**attempt))
-            continue
-
-        _check_credits(response)
-
-        if response.status_code in config.retry_http_codes and not is_last_attempt:
-            time.sleep(config.retry_backoff_factor * (2**attempt))
-            continue
-
-        return response
-
-    raise RuntimeError("unreachable: retry loop always returns or raises")
-
-
-def invert_abstract(inv_index: dict[str, list[int]] | None) -> str | None:
-    """Invert OpenAlex abstract index.
-
-    Parameters
-    ----------
-    inv_index : dict
-        Inverted index of the abstract.
-
-    Returns
-    -------
-    str
-        Inverted abstract.
-    """
-    if inv_index is not None:
-        positions = sorted(
-            (position, word) for word, pos in inv_index.items() for position in pos
-        )
-        # OpenAlex keeps HTML entities such as ``&amp;`` in the index keys.
-        return html.unescape(" ".join(word for _, word in positions))
+            params[key] = value
 
 
 def _wrap_values_nested_dict(
-    d: dict[str, Any], func: Callable[[Any], Any]
+    data: dict[str, Any], func: Callable[[Any], Any]
 ) -> dict[str, Any]:
-    """Apply a function to all values in a nested dictionary.
-
-    Parameters
-    ----------
-    d : dict
-        Nested dictionary.
-    func : function
-        Function to apply to the values.
-
-    Returns
-    -------
-    dict
-        Dictionary with the function applied to the values.
-    """
-    for k, v in d.items():
-        if isinstance(v, dict):
-            d[k] = _wrap_values_nested_dict(v, func)
-        elif isinstance(v, list):
-            d[k] = [func(i) for i in v]
+    for key, value in data.items():
+        if isinstance(value, dict):
+            data[key] = _wrap_values_nested_dict(value, func)
+        elif isinstance(value, list):
+            data[key] = [func(item) for item in value]
         else:
-            d[k] = func(v)
-
-    return d
-
-
-class QueryError(ValueError):
-    """Exception raised for errors in the query."""
+            data[key] = func(value)
+    return data
 
 
-class CreditsExhaustedError(QueryError):
-    """Raised when the API key has no credits left for the request.
-
-    OpenAlex reports this as HTTP 429 with ``X-RateLimit-Remaining`` lower than
-    ``X-RateLimit-Credits-Required``. Retrying cannot help; the budget resets at
-    midnight UTC.
-    """
+logger = logging.getLogger("pyalex")
 
 
-class OpenAlexEntity(dict[str, Any]):
-    """Base class for OpenAlex entities."""
-
-
-class RateLimit(TypedDict, total=False):
-    """Rate limit and credit information returned in the ``X-RateLimit-*`` headers.
-
-    Keys mirror the header names with the ``x-ratelimit-`` prefix removed and
-    dashes replaced by underscores, so ``X-RateLimit-Credits-Used`` becomes
-    ``credits_used``.
-    """
-
-    limit: int
-    remaining: int
-    reset: int
-    credits_used: int
-    credits_remaining: int
-    credits_limit: int
-    credits_required: int
-    credits_reset: int
-    cost_usd: float
-    limit_usd: float
-    remaining_usd: float
-    prepaid_remaining_usd: float
-    onetime_remaining: int
-
-
-class Meta(TypedDict):
-    """Metadata returned alongside a list of OpenAlex entities.
-
-    Keys whose presence depends on the endpoint or the query parameters are
-    marked ``NotRequired`` (e.g. ``page`` is absent when cursor paging is used).
-    """
-
-    count: int
-    db_response_time_ms: int
-    page: NotRequired[int]
-    per_page: NotRequired[int]
-    next_cursor: NotRequired[str | None]
-    groups_count: NotRequired[int]
-    ratelimit: NotRequired[RateLimit]
-
-
-_RATELIMIT_PREFIX = "x-ratelimit-"
-
-
-def _extract_ratelimit(response: httpx2.Response) -> RateLimit:
-    """Parse the ``X-RateLimit-*`` headers of a response.
-
-    Parameters
-    ----------
-    response : httpx2.Response
-        Response to read the headers from.
-
-    Returns
-    -------
-    RateLimit
-        Parsed values with native types. Headers that are absent or cannot be
-        parsed are omitted.
-    """
-    values: dict[str, int | float] = {}
-
-    for header, raw in response.headers.items():
-        name = header.lower()
-        if not name.startswith(_RATELIMIT_PREFIX):
-            continue
-
-        key = name.removeprefix(_RATELIMIT_PREFIX).replace("-", "_")
-        try:
-            values[key] = float(raw) if key.endswith("_usd") else int(raw)
-        except ValueError:
-            logger.debug("Ignoring unparsable rate limit header %s=%r", header, raw)
-
-    return cast(RateLimit, values)
-
-
-def _check_credits(response: httpx2.Response) -> None:
-    """Raise :class:`CreditsExhaustedError` when a 429 means the budget is spent.
-
-    Parameters
-    ----------
-    response : httpx2.Response
-        Response to inspect.
-
-    Raises
-    ------
-    CreditsExhaustedError
-        If the response is a 429 and fewer credits remain than the request
-        requires. Retrying cannot help, so it is raised before the retry loop.
-    """
-    if response.status_code != 429:
-        return
-
-    try:
-        remaining = int(response.headers.get("x-ratelimit-remaining", "1"))
-        required = int(response.headers.get("x-ratelimit-credits-required", "1"))
-    except ValueError:
-        return
-
-    if remaining >= required:
-        return
-
-    reset = response.headers.get("x-ratelimit-reset")
-    reset_hint = f" The budget resets in {reset} seconds." if reset else ""
-    raise CreditsExhaustedError(
-        f"Insufficient credits: {remaining} remaining, {required} required.{reset_hint}"
-    )
-
-
-class OpenAlexResponseList[T: OpenAlexEntity](list[T]):
-    """A list of OpenAlexEntity objects with metadata.
-
-    Attributes:
-        meta: a dictionary with metadata about the results
-        resource_class: the class to use for each entity in the results
-
-    Arguments:
-        results: a list of OpenAlexEntity objects
-        meta: a dictionary with metadata about the results
-        resource_class: the class to use for each entity in the results
-
-    Returns:
-        a OpenAlexResponseList object
-    """
-
-    def __init__(
-        self,
-        results: list[dict[str, Any]],
-        meta: Meta | None = None,
-        resource_class: type[T] | None = None,
-    ) -> None:
-        self.resource_class: type[T] = resource_class or cast(type[T], OpenAlexEntity)
-        self.meta: Meta | None = meta
-
-        super().__init__([self.resource_class(ent) for ent in results])
-
-
-class GroupByBucket(OpenAlexEntity):
-    """One bucket of a ``group_by`` response.
-
-    OpenAlex returns ``{"key": ..., "key_display_name": ..., "count": ...}``
-    for every group. These rows are not entities, so they get their own type.
-    """
-
-    @overload
-    def __getitem__(self, key: Literal["key"]) -> str: ...
-    @overload
-    def __getitem__(self, key: Literal["key_display_name"]) -> str: ...
-    @overload
-    def __getitem__(self, key: Literal["count"]) -> int: ...
-    @overload
-    def __getitem__(self, key: str) -> Any: ...
-    @override
-    def __getitem__(self, key: str) -> Any:
-        return super().__getitem__(key)
+_client: httpx2.Client | None = None
 
 
 class Paginator[T: OpenAlexEntity]:
@@ -650,36 +241,6 @@ class Paginator[T: OpenAlexEntity]:
         self.n = self.n + len(r)
 
         return r
-
-
-class OpenAlexAuth(httpx2.Auth):
-    """OpenAlex auth class based on httpx auth.
-
-    Includes the email, api_key, and user-agent headers.
-
-    Parameters
-    ----------
-    config : AlexConfig
-        Configuration object for OpenAlex API.
-    """
-
-    def __init__(self, config: AlexConfig) -> None:
-        self.config = config
-
-    @override
-    def auth_flow(
-        self, request: httpx2.Request
-    ) -> Generator[httpx2.Request, httpx2.Response, None]:
-        if self.config.api_key:
-            request.headers["Authorization"] = f"Bearer {self.config.api_key}"
-
-        if self.config.email:
-            request.headers["From"] = self.config.email
-
-        if self.config.user_agent:
-            request.headers["User-Agent"] = self.config.user_agent
-
-        yield request
 
 
 def _fetch_entities[ResponseT: OpenAlexEntity](
@@ -1210,147 +771,7 @@ class BaseOpenAlex[T: OpenAlexEntity]:
         return resp_list
 
 
-class BaseContent:
-    """Class representing content in OpenAlex."""
-
-    def __init__(self, key: str) -> None:
-        self.key = key
-
-    @override
-    def __repr__(self) -> str:
-        return f"Content(key='{self.key}')"
-
-    @property
-    def url(self) -> str:
-        """Get the URL for the content.
-
-        Returns
-        -------
-        str
-            URL for the content.
-        """
-        return f"https://content.openalex.org/works/{self.key}"
-
-    def get(self) -> bytes:
-        """Get the content.
-
-        Requests ``self.url`` so that subclasses fetch the format they
-        advertise (``.pdf`` for :class:`PDF`, ``.grobid-xml`` for :class:`TEI`).
-
-        Returns
-        -------
-        bytes
-            Content of the request.
-        """
-        res = _send(_get_client(), self.url, auth=OpenAlexAuth(config))
-        res.raise_for_status()
-        return res.content
-
-    def download(self, filepath: str) -> None:
-        """Download the content to a file.
-
-        Parameters
-        ----------
-        filepath : str
-            Path to save the content.
-        """
-
-        with open(filepath, "wb") as f:
-            f.write(self.get())
-
-
 # The API
-
-
-class PDF(BaseContent):
-    """Class representing a PDF content in OpenAlex."""
-
-    @property
-    @override
-    def url(self) -> str:
-        """Get the URL for the content.
-
-        Returns
-        -------
-        str
-            URL for the content.
-        """
-        return f"https://content.openalex.org/works/{self.key}.pdf"
-
-
-class TEI(BaseContent):
-    """Class representing a TEI content in OpenAlex."""
-
-    @property
-    @override
-    def url(self) -> str:
-        """Get the URL for the content.
-
-        Returns
-        -------
-        str
-            URL for the content.
-        """
-        return f"https://content.openalex.org/works/{self.key}.grobid-xml"
-
-
-class Work(OpenAlexEntity):
-    """Class representing a work entity in OpenAlex."""
-
-    @overload
-    def __getitem__(self, key: Literal["abstract"]) -> str | None: ...
-    @overload
-    def __getitem__(
-        self, key: Literal["abstract_inverted_index"]
-    ) -> dict[str, list[int]] | None: ...
-    @overload
-    def __getitem__(self, key: Literal["id"]) -> str: ...
-    @overload
-    def __getitem__(self, key: Literal["doi"]) -> str | None: ...
-    @overload
-    def __getitem__(self, key: Literal["display_name"]) -> str | None: ...
-    @overload
-    def __getitem__(self, key: Literal["publication_year"]) -> int | None: ...
-    @overload
-    def __getitem__(self, key: Literal["cited_by_count"]) -> int: ...
-    @overload
-    def __getitem__(self, key: Literal["type"]) -> str: ...
-    @overload
-    def __getitem__(self, key: Literal["open_access"]) -> dict[str, Any]: ...
-    @overload
-    def __getitem__(self, key: Literal["referenced_works"]) -> list[str]: ...
-    @overload
-    def __getitem__(self, key: Literal["authorships"]) -> list[dict[str, Any]]: ...
-    @overload
-    def __getitem__(self, key: str) -> Any: ...
-    @override
-    def __getitem__(self, key: str) -> Any:
-        if key == "abstract":
-            return invert_abstract(self["abstract_inverted_index"])
-
-        return super().__getitem__(key)
-
-    @property
-    def pdf(self) -> PDF:
-        """Get the PDF content for the work.
-
-        Returns
-        -------
-        PDF
-            PDF content object.
-        """
-        return PDF(self["id"].split("/")[-1])
-
-    @property
-    def tei(self) -> TEI:
-        """Get the TEI content for the work.
-
-        Returns
-        -------
-        TEI
-            TEI content object.
-        """
-        return TEI(self["id"].split("/")[-1])
 
 
 class Works(BaseOpenAlex[Work]):
@@ -1377,18 +798,10 @@ class Works(BaseOpenAlex[Work]):
         return self
 
 
-class Author(OpenAlexEntity):
-    """Class representing an author entity in OpenAlex."""
-
-
 class Authors(BaseOpenAlex[Author]):
     """Class representing a collection of author entities in OpenAlex."""
 
     resource_class = Author
-
-
-class Source(OpenAlexEntity):
-    """Class representing a source entity in OpenAlex."""
 
 
 class Sources(BaseOpenAlex[Source]):
@@ -1397,18 +810,10 @@ class Sources(BaseOpenAlex[Source]):
     resource_class = Source
 
 
-class Institution(OpenAlexEntity):
-    """Class representing an institution entity in OpenAlex."""
-
-
 class Institutions(BaseOpenAlex[Institution]):
     """Class representing a collection of institution entities in OpenAlex."""
 
     resource_class = Institution
-
-
-class Domain(OpenAlexEntity):
-    """Class representing a domain entity in OpenAlex."""
 
 
 class Domains(BaseOpenAlex[Domain]):
@@ -1417,18 +822,10 @@ class Domains(BaseOpenAlex[Domain]):
     resource_class = Domain
 
 
-class Field(OpenAlexEntity):
-    """Class representing a field entity in OpenAlex."""
-
-
 class Fields(BaseOpenAlex[Field]):
     """Class representing a collection of field entities in OpenAlex."""
 
     resource_class = Field
-
-
-class Subfield(OpenAlexEntity):
-    """Class representing a subfield entity in OpenAlex."""
 
 
 class Subfields(BaseOpenAlex[Subfield]):
@@ -1437,18 +834,10 @@ class Subfields(BaseOpenAlex[Subfield]):
     resource_class = Subfield
 
 
-class Topic(OpenAlexEntity):
-    """Class representing a topic entity in OpenAlex."""
-
-
 class Topics(BaseOpenAlex[Topic]):
     """Class representing a collection of topic entities in OpenAlex."""
 
     resource_class = Topic
-
-
-class Publisher(OpenAlexEntity):
-    """Class representing a publisher entity in OpenAlex."""
 
 
 class Publishers(BaseOpenAlex[Publisher]):
@@ -1457,18 +846,10 @@ class Publishers(BaseOpenAlex[Publisher]):
     resource_class = Publisher
 
 
-class Funder(OpenAlexEntity):
-    """Class representing a funder entity in OpenAlex."""
-
-
 class Funders(BaseOpenAlex[Funder]):
     """Class representing a collection of funder entities in OpenAlex."""
 
     resource_class = Funder
-
-
-class Award(OpenAlexEntity):
-    """Class representing an award entity in OpenAlex."""
 
 
 class Awards(BaseOpenAlex[Award]):
@@ -1477,18 +858,10 @@ class Awards(BaseOpenAlex[Award]):
     resource_class = Award
 
 
-class Keyword(OpenAlexEntity):
-    """Class representing a keyword entity in OpenAlex."""
-
-
 class Keywords(BaseOpenAlex[Keyword]):
     """Class representing a collection of keyword entities in OpenAlex."""
 
     resource_class = Keyword
-
-
-class Autocomplete(OpenAlexEntity):
-    """Class representing an autocomplete entity in OpenAlex."""
 
 
 class autocompletes:
