@@ -4,19 +4,29 @@ description = "Python interface to the OpenAlex database"
 authors = [
     { name = "Jonathan de Bruin", email = "jonathandebruinos@gmail.com" }
 ]
+maintainers = [
+    { name = "Yousa-Mirage" }
+]
 readme = "README.md"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13"
+    "Programming Language :: Python :: 3.13",
+    "Typing :: Typed"
 ]
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "httpx2>=2.16"
 ]
 dynamic = ["version"]
 requires-python = ">=3.12"
+
+[project.urls]
+Repository = "https://github.com/Yousa-Mirage/pyalex"
+Issues = "https://github.com/Yousa-Mirage/pyalex/issues"
 
 [project.optional-dependencies]
 test = ["pytest", "pytest-xdist", "python-dotenv"]
