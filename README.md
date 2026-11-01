@@ -4,7 +4,7 @@
 
 # PyAlex
 
-![PyPI](https://img.shields.io/pypi/v/pyalex) [![DOI](https://zenodo.org/badge/557541347.svg)](https://zenodo.org/badge/latestdoi/557541347)
+[![Tests](https://github.com/Yousa-Mirage/pyalex/actions/workflows/python-package.yml/badge.svg)](https://github.com/Yousa-Mirage/pyalex/actions/workflows/python-package.yml) [![Lint](https://github.com/Yousa-Mirage/pyalex/actions/workflows/python-lint.yml/badge.svg)](https://github.com/Yousa-Mirage/pyalex/actions/workflows/python-lint.yml)
 
 
 PyAlex is a Python library for [OpenAlex](https://openalex.org/). OpenAlex is
@@ -53,6 +53,17 @@ PyAlex requires Python 3.12 or later. Install it with [uv](https://docs.astral.s
 
 ```sh
 uv add git+https://github.com/Yousa-Mirage/pyalex
+```
+
+For local development, sync the locked environment and run the checks with uv:
+
+```sh
+uv sync
+uv run pytest -n 1
+uv run ruff check .
+uv run ruff format --check pyalex tests
+uv run ty check
+uv build
 ```
 
 ## Getting started
@@ -592,7 +603,7 @@ R users can use the excellent [OpenAlexR](https://github.com/ropensci/openalexR)
 
 > This library is a community contribution. The authors of this Python library aren't affiliated with OpenAlex.
 
-This library is maintained by [J535D165](https://github.com/J535D165) and [PeterLombaers](https://github.com/PeterLombaers).
+The upstream library is maintained by [J535D165](https://github.com/J535D165) and [PeterLombaers](https://github.com/PeterLombaers). This fork is maintained by [Yousa-Mirage](https://github.com/Yousa-Mirage).
 Feel free to reach out with questions, remarks, and suggestions. The
-[issue tracker](/issues) is a good starting point. You can also reach out via
+[issue tracker](https://github.com/Yousa-Mirage/pyalex/issues) is a good starting point. You can also reach out via
 [jonathandebruinos@gmail.com](mailto:jonathandebruinos@gmail.com).
