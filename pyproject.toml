@@ -28,14 +28,14 @@ requires-python = ">=3.12"
 Repository = "https://github.com/Yousa-Mirage/pyalex"
 Issues = "https://github.com/Yousa-Mirage/pyalex/issues"
 
-[project.optional-dependencies]
-test = ["pytest", "pytest-xdist", "python-dotenv"]
-
 [dependency-groups]
-dev = [
+test = [
     "pytest>=8.0",
     "pytest-xdist>=3.0",
     "python-dotenv>=1.0",
+]
+dev = [
+    { include-group = "test" },
     "ruff==0.17.3",
     "ty==0.0.94"
 ]
