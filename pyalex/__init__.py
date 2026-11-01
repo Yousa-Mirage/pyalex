@@ -12,6 +12,7 @@ __version_tuple__: tuple[int, ...] = tuple(
 
 from pyalex.api import Author
 from pyalex.api import Authors
+from pyalex.api import Autocomplete
 from pyalex.api import Award
 from pyalex.api import Awards
 from pyalex.api import CreditsExhaustedError
@@ -28,10 +29,13 @@ from pyalex.api import Institutions
 from pyalex.api import Journals
 from pyalex.api import Keyword
 from pyalex.api import Keywords
+from pyalex.api import Meta
 from pyalex.api import OpenAlexResponseList
+from pyalex.api import Paginator
 from pyalex.api import People
 from pyalex.api import Publisher
 from pyalex.api import Publishers
+from pyalex.api import QueryError
 from pyalex.api import RateLimit
 from pyalex.api import Source
 from pyalex.api import Sources
@@ -48,6 +52,7 @@ from pyalex.api import invert_abstract
 __all__ = [
     "Author",
     "Authors",
+    "Autocomplete",
     "Award",
     "Awards",
     "CreditsExhaustedError",
@@ -64,10 +69,13 @@ __all__ = [
     "Journals",
     "Keyword",
     "Keywords",
+    "Meta",
     "OpenAlexResponseList",
+    "Paginator",
     "People",
     "Publisher",
     "Publishers",
+    "QueryError",
     "RateLimit",
     "Source",
     "Sources",
